@@ -41,8 +41,6 @@ while (enemyPlayer.IsMoving)
     yield return null;
 }
 
-boardManager.BeginEnemyObstaclePhase();
-
         boardManager.BeginEnemyObstaclePhase();
 
         yield return new WaitForSeconds(thinkingDelay);

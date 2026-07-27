@@ -36,7 +36,7 @@ for (int i = 0; i < 60; i++)
 
     if (humanPlayer != null && enemyPlayer != null)
     {
-        break;
+        break;   
     }
 
     yield return null;
@@ -135,8 +135,7 @@ if (uiManager == null)
     {
         GridMovement[] characters =
             FindObjectsByType<GridMovement>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None
+                FindObjectsInactive.Exclude
             );
 
         foreach (GridMovement character in characters)

@@ -1,0 +1,11 @@
+{
+  "name": "BlockArena.Editor",
+  "rootNamespace": "BlockArena.Editor",
+  "references": [
+    "BlockArena.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": true
+}

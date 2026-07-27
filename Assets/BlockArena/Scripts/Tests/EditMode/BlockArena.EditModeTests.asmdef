@@ -1,0 +1,14 @@
+{
+  "name": "BlockArena.EditModeTests",
+  "rootNamespace": "BlockArena.Tests.EditMode",
+  "references": [
+    "BlockArena.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "autoReferenced": false
+}

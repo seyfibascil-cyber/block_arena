@@ -1,0 +1,8 @@
+{
+  "name": "BlockArena.Runtime",
+  "rootNamespace": "BlockArena",
+  "references": [
+    "Unity.TextMeshPro"
+  ],
+  "autoReferenced": true
+}

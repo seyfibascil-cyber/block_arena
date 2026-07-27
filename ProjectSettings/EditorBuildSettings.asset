@@ -5,14 +5,11 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
-    path: Assets/Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
   - enabled: 1
-    path: Assets/Scenes/MainMenu.unity
+    path: Assets/BlockArena/Scenes/MainMenu.unity
     guid: 8310d88ba03164f4880dad6647fccc68
   - enabled: 1
-    path: Assets/Scenes/Game.unity
+    path: Assets/BlockArena/Scenes/Game.unity
     guid: d8abe0088247d7940871fed519897419
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

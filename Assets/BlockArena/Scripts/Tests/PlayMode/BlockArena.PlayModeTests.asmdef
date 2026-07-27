@@ -1,0 +1,11 @@
+{
+  "name": "BlockArena.PlayModeTests",
+  "rootNamespace": "BlockArena.Tests.PlayMode",
+  "references": [
+    "BlockArena.Runtime"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "autoReferenced": false
+}
