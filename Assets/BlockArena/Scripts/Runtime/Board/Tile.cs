@@ -7,6 +7,8 @@ public class Tile : MonoBehaviour
 
     private Color currentBaseColor;
     private Material tileMaterial;
+    private Color normalColor = new Color(0.85f, 0.85f, 0.85f);
+    private Color blockedColor = new Color(0.35f, 0.35f, 0.35f);
 
     public int X { get; private set; }
     public int Z { get; private set; }
@@ -22,6 +24,7 @@ public class Tile : MonoBehaviour
         if (tileRenderer != null)
         {
             tileMaterial = tileRenderer.material;
+            ConfigureStableMobileMaterial(tileMaterial);
         }
     }
 
@@ -39,6 +42,38 @@ public class Tile : MonoBehaviour
 
         gameObject.name = $"Tile_{x}_{z}";
 
+        UpdateColor();
+    }
+
+    private static void ConfigureStableMobileMaterial(Material material)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        if (material.HasProperty("_Metallic"))
+        {
+            material.SetFloat("_Metallic", 0f);
+        }
+        if (material.HasProperty("_Smoothness"))
+        {
+            material.SetFloat("_Smoothness", 0.12f);
+        }
+        if (material.HasProperty("_SpecularHighlights"))
+        {
+            material.SetFloat("_SpecularHighlights", 0f);
+        }
+        if (material.HasProperty("_EnvironmentReflections"))
+        {
+            material.SetFloat("_EnvironmentReflections", 0f);
+        }
+    }
+
+    public void SetTheme(Color normal, Color blocked)
+    {
+        normalColor = normal;
+        blockedColor = blocked;
         UpdateColor();
     }
 
@@ -80,19 +115,23 @@ public class Tile : MonoBehaviour
 
         if (IsBlocked)
         {
-            currentBaseColor = new Color(0.35f, 0.35f, 0.35f);
+            // Engel, karonun üzerinde zaten görsel olarak belli oluyor.
+            // Engelli karoyu koyulaştırmak yerine tahtanın kendi rengini koru.
+            currentBaseColor = normalColor;
         }
         else if (IsMovementTarget)
         {
-            currentBaseColor = new Color(0.15f, 0.85f, 0.25f);
+            // Seçilebilir alan görünür kalsın, fakat karakter görselinin önüne
+            // geçecek kadar neon ve parlak olmasın.
+            currentBaseColor = new Color(0.18f, 0.62f, 0.31f);
         }
         else if (IsObstacleTarget)
         {
-            currentBaseColor = new Color(0.9f, 0.2f, 0.15f);
+            currentBaseColor = new Color(0.72f, 0.28f, 0.23f);
         }
         else
         {
-            currentBaseColor = new Color(0.85f, 0.85f, 0.85f);
+            currentBaseColor = normalColor;
         }
 
         tileMaterial.color = currentBaseColor;
@@ -105,10 +144,12 @@ public class Tile : MonoBehaviour
             return;
         }
 
-        if (IsMovementTarget)
+        if (IsMovementTarget || IsObstacleTarget)
         {
-            float pulse = (Mathf.Sin(Time.time * 4f) + 1f) * 0.5f;
-            float brightness = Mathf.Lerp(0.75f, 1.15f, pulse);
+            float pulseSpeed = IsMovementTarget ? 4f : 5.5f;
+            float pulse =
+                (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f;
+            float brightness = Mathf.Lerp(0.90f, 1.06f, pulse);
 
             Color pulsingColor = currentBaseColor * brightness;
             pulsingColor.a = 1f;
@@ -123,6 +164,11 @@ public class Tile : MonoBehaviour
 
     private void OnMouseDown()
     {
+        if (Application.isMobilePlatform)
+        {
+            return;
+        }
+
         if (boardManager != null)
         {
             boardManager.OnTileClicked(this);

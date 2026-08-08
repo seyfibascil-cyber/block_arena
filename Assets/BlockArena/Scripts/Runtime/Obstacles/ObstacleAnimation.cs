@@ -15,14 +15,17 @@ public class ObstacleAnimation : MonoBehaviour
     private IEnumerator PlayAppearAnimation()
     {
         Vector3 finalScale = transform.localScale;
+        Vector3 finalPosition = transform.position;
 
         Vector3 startScale = new Vector3(
             finalScale.x,
             startScaleY,
             finalScale.z
         );
+        Vector3 startPosition = finalPosition - Vector3.up * 0.35f;
 
         transform.localScale = startScale;
+        transform.position = startPosition;
 
         float elapsedTime = 0f;
 
@@ -33,21 +36,31 @@ public class ObstacleAnimation : MonoBehaviour
             float progress =
                 elapsedTime / animationDuration;
 
-            progress = Mathf.SmoothStep(
+            float smoothProgress = Mathf.SmoothStep(
                 0f,
                 1f,
                 progress
             );
 
-            transform.localScale = Vector3.Lerp(
+            float overshoot = Mathf.Sin(progress * Mathf.PI) * 0.08f;
+            Vector3 animatedScale = Vector3.Lerp(
                 startScale,
                 finalScale,
-                progress
+                smoothProgress
+            );
+            animatedScale.y += overshoot;
+
+            transform.localScale = animatedScale;
+            transform.position = Vector3.Lerp(
+                startPosition,
+                finalPosition,
+                smoothProgress
             );
 
             yield return null;
         }
 
         transform.localScale = finalScale;
+        transform.position = finalPosition;
     }
 }

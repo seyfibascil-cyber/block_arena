@@ -24,10 +24,19 @@ public class BoardManager : MonoBehaviour
     private TurnManager turnManager;
 
     private bool gameEnded;
+    private int roundNumber;
+    private int lastTileClickFrame = -1;
+    private LevelDefinition currentLevel;
+    private ChampionTheme enemyChampion;
+    private WorldTheme currentTheme;
 
     private IEnumerator Start()
     {
+        Screen.orientation = ScreenOrientation.Portrait;
+        LoadLevelDefinition();
+        ConfigureWorldTheme();
         CreateBoard();
+        ConfigureCameraForBoard();
 
 // GameManager'ın karakterleri oluşturmasını bekle.
 for (int i = 0; i < 60; i++)
@@ -89,7 +98,195 @@ if (uiManager == null)
             yield break;
         }
 
+        ApplyThemeToCharacters();
+
+        PlaceStartingObstacles();
+
+        uiManager.SetMatchInfo(
+            aiController.CurrentDifficulty,
+            1
+        );
+
         StartHumanMovementPhase();
+    }
+
+    private void LoadLevelDefinition()
+    {
+        GameProgression.GameMode mode =
+            (GameProgression.GameMode)PlayerPrefs.GetInt(
+                GameProgression.GameModeKey,
+                (int)GameProgression.GameMode.Standard
+            );
+
+        if (mode != GameProgression.GameMode.Levels)
+        {
+            return;
+        }
+
+        int levelNumber = PlayerPrefs.GetInt(
+            GameProgression.SelectedLevelKey,
+            1
+        );
+
+        currentLevel = LevelCatalog.GetLevel(levelNumber);
+        boardSize = currentLevel.BoardSize;
+    }
+
+    private void PlaceStartingObstacles()
+    {
+        if (currentLevel == null)
+        {
+            return;
+        }
+
+        foreach (BoardPosition position in
+                 currentLevel.StartingObstacles)
+        {
+            if (BoardRules.IsInsideBoard(
+                    boardSize,
+                    position.X,
+                    position.Z
+                ))
+            {
+                PlaceObstacle(
+                    tiles[position.X, position.Z],
+                    enemyChampion ?? ChampionCatalog.Get(ChampionId.Classic),
+                    false
+                );
+            }
+        }
+    }
+
+    private void Update()
+    {
+        if (uiManager == null || uiManager.IsBoardInputBlocked)
+        {
+            return;
+        }
+
+        Vector2 pointerPosition;
+
+        if (Application.isMobilePlatform)
+        {
+            if (Input.touchCount == 0)
+            {
+                return;
+            }
+
+            Touch touch = Input.GetTouch(0);
+            if (touch.phase != TouchPhase.Began)
+            {
+                return;
+            }
+
+            pointerPosition = touch.position;
+        }
+        else
+        {
+            if (!Input.GetMouseButtonDown(0))
+            {
+                return;
+            }
+
+            pointerPosition = Input.mousePosition;
+        }
+
+        Camera boardCamera = Camera.main;
+
+        if (boardCamera == null)
+        {
+            return;
+        }
+
+        Tile assistedTile = FindNearestSelectableTile(
+            boardCamera,
+            pointerPosition
+        );
+
+        if (assistedTile != null)
+        {
+            OnTileClicked(assistedTile);
+            return;
+        }
+
+        Ray ray = boardCamera.ScreenPointToRay(pointerPosition);
+        RaycastHit[] hits = Physics.RaycastAll(
+            ray,
+            Mathf.Infinity,
+            Physics.DefaultRaycastLayers,
+            QueryTriggerInteraction.Ignore
+        );
+
+        Tile selectedTile = null;
+        float nearestTileDistance = float.MaxValue;
+
+        foreach (RaycastHit hit in hits)
+        {
+            Tile touchedTile = hit.collider.GetComponentInParent<Tile>();
+
+            if (touchedTile != null && hit.distance < nearestTileDistance)
+            {
+                selectedTile = touchedTile;
+                nearestTileDistance = hit.distance;
+            }
+        }
+
+        if (selectedTile != null)
+        {
+            OnTileClicked(selectedTile);
+        }
+    }
+
+    private Tile FindNearestSelectableTile(
+        Camera boardCamera,
+        Vector2 pointerPosition
+    )
+    {
+        if (tiles == null || gameEnded)
+        {
+            return null;
+        }
+
+        float touchRadius = Mathf.Clamp(
+            Screen.width * 0.085f,
+            58f,
+            115f
+        );
+        float bestDistanceSquared = touchRadius * touchRadius;
+        Tile bestTile = null;
+
+        for (int x = 0; x < boardSize; x++)
+        {
+            for (int z = 0; z < boardSize; z++)
+            {
+                Tile tile = tiles[x, z];
+                if (tile == null ||
+                    (!tile.IsMovementTarget && !tile.IsObstacleTarget))
+                {
+                    continue;
+                }
+
+                Vector3 screenPoint = boardCamera.WorldToScreenPoint(
+                    tile.transform.position + Vector3.up * 0.12f
+                );
+                if (screenPoint.z <= 0f)
+                {
+                    continue;
+                }
+
+                Vector2 difference =
+                    (Vector2)screenPoint - pointerPosition;
+                float distanceSquared = difference.sqrMagnitude;
+
+                if (distanceSquared < bestDistanceSquared)
+                {
+                    bestDistanceSquared = distanceSquared;
+                    bestTile = tile;
+                }
+            }
+        }
+
+        return bestTile;
     }
 
     private void CreateBoard()
@@ -126,9 +323,246 @@ if (uiManager == null)
                 }
 
                 tile.Initialize(this, x, z);
+                tile.SetTheme(
+                    (x + z) % 2 == 0
+                        ? currentTheme.TileA
+                        : currentTheme.TileB,
+                    currentTheme.BlockedTile
+                );
                 tiles[x, z] = tile;
             }
         }
+    }
+
+    private void ConfigureWorldTheme()
+    {
+        currentTheme = WorldThemeCatalog.GetForCurrentGame();
+        CosmeticItem boardCosmetic =
+            CosmeticProgress.GetEquipped(CosmeticCategory.Board);
+        CosmeticItem obstacleCosmetic =
+            CosmeticProgress.GetEquipped(CosmeticCategory.Obstacle);
+
+        if (boardCosmetic.HasColorOverride)
+        {
+            Color boardColor = boardCosmetic.Color;
+            currentTheme = new WorldTheme(
+                currentTheme.Number,
+                currentTheme.Name,
+                Color.Lerp(boardColor, Color.white, 0.16f),
+                Color.Lerp(boardColor, Color.black, 0.13f),
+                currentTheme.BlockedTile,
+                currentTheme.Obstacle,
+                currentTheme.Human,
+                currentTheme.Enemy,
+                currentTheme.Background,
+                currentTheme.Metallic,
+                currentTheme.Smoothness
+            );
+        }
+
+        if (obstacleCosmetic.HasColorOverride)
+        {
+            currentTheme = new WorldTheme(
+                currentTheme.Number,
+                currentTheme.Name,
+                currentTheme.TileA,
+                currentTheme.TileB,
+                currentTheme.BlockedTile,
+                obstacleCosmetic.Color,
+                currentTheme.Human,
+                currentTheme.Enemy,
+                currentTheme.Background,
+                Mathf.Max(currentTheme.Metallic, 0.45f),
+                Mathf.Max(currentTheme.Smoothness, 0.7f)
+            );
+        }
+        Camera boardCamera = Camera.main;
+        if (boardCamera != null)
+        {
+            boardCamera.clearFlags = CameraClearFlags.SolidColor;
+            boardCamera.backgroundColor = currentTheme.Background;
+        }
+
+        RenderSettings.ambientLight = Color.Lerp(
+            currentTheme.Background,
+            Color.white,
+            0.55f
+        );
+    }
+
+    private void ApplyThemeToCharacters()
+    {
+        ChampionTheme selectedChampion = ChampionProgress.Selected;
+        enemyChampion = ChooseEnemyChampion(selectedChampion);
+        ApplyCharacterTheme(humanPlayer, selectedChampion.PrimaryColor, false);
+        ApplyCharacterTheme(enemyPlayer, currentTheme.Enemy, true);
+        ChampionVisualBuilder.BuildCharacter(
+            humanPlayer != null ? humanPlayer.gameObject : null,
+            selectedChampion,
+            false
+        );
+        ChampionVisualBuilder.BuildCharacter(
+            enemyPlayer != null ? enemyPlayer.gameObject : null,
+            enemyChampion,
+            true
+        );
+        ApplyMovementEffect(humanPlayer);
+    }
+
+    private ChampionTheme ChooseEnemyChampion(ChampionTheme playerChampion)
+    {
+        ChampionId[] availableEnemies =
+        {
+            ChampionId.Classic,
+            ChampionId.Ninja,
+            ChampionId.Pirate,
+            ChampionId.Astronaut,
+            ChampionId.Robot,
+            ChampionId.Wizard,
+            ChampionId.Dinosaur,
+            ChampionId.Bear
+        };
+
+        int index = Random.Range(0, availableEnemies.Length);
+
+        if (availableEnemies.Length > 1 &&
+            availableEnemies[index] == playerChampion.Id)
+        {
+            index = (index + 1) % availableEnemies.Length;
+        }
+
+        return ChampionCatalog.Get(availableEnemies[index]);
+    }
+
+    private static void ApplyMovementEffect(GridMovement character)
+    {
+        if (character == null)
+        {
+            return;
+        }
+
+        CosmeticItem effect =
+            CosmeticProgress.GetEquipped(CosmeticCategory.Effect);
+        TrailRenderer existing = character.GetComponent<TrailRenderer>();
+
+        if (!effect.HasColorOverride)
+        {
+            if (existing != null)
+            {
+                existing.enabled = false;
+            }
+            return;
+        }
+
+        TrailRenderer trail = existing != null
+            ? existing
+            : character.gameObject.AddComponent<TrailRenderer>();
+        trail.enabled = true;
+        trail.time = 0.42f;
+        trail.startWidth = 0.28f;
+        trail.endWidth = 0.02f;
+        trail.minVertexDistance = 0.04f;
+        trail.startColor = new Color(
+            effect.Color.r,
+            effect.Color.g,
+            effect.Color.b,
+            0.9f
+        );
+        trail.endColor = new Color(
+            effect.Color.r,
+            effect.Color.g,
+            effect.Color.b,
+            0f
+        );
+
+        Shader shader = Shader.Find("Sprites/Default");
+        if (shader != null)
+        {
+            trail.material = new Material(shader);
+        }
+    }
+
+    private void ApplyCharacterTheme(
+        GridMovement character,
+        Color color,
+        bool enemy
+    )
+    {
+        if (character == null)
+        {
+            return;
+        }
+
+        WorldThemeCatalog.ApplyToRenderers(
+            character.gameObject,
+            color,
+            currentTheme.Metallic,
+            currentTheme.Smoothness
+        );
+
+        float widthMultiplier =
+            0.82f + (currentTheme.Number - 1) * 0.015f;
+        float heightMultiplier = enemy ? 1.04f : 1f;
+        character.transform.localScale = new Vector3(
+            widthMultiplier,
+            heightMultiplier * 0.94f,
+            widthMultiplier
+        );
+    }
+
+    private void ConfigureCameraForBoard()
+    {
+        Camera boardCamera = Camera.main;
+
+        if (boardCamera == null || boardCamera.orthographic)
+        {
+            return;
+        }
+
+        float boardWorldSize = (boardSize - 1) * tileSpacing;
+        Vector3 boardCenter = new Vector3(
+            boardWorldSize * 0.5f,
+            0f,
+            boardWorldSize * 0.5f
+        );
+
+        float verticalFieldOfView =
+            boardCamera.fieldOfView * Mathf.Deg2Rad;
+        float safeAspect = Mathf.Max(boardCamera.aspect, 0.4f);
+        float horizontalFieldOfView = 2f * Mathf.Atan(
+            Mathf.Tan(verticalFieldOfView * 0.5f) * safeAspect
+        );
+
+        float halfBoardWithMargin = boardWorldSize * 0.62f;
+        float horizontalDistance =
+            halfBoardWithMargin /
+            Mathf.Tan(horizontalFieldOfView * 0.5f);
+        float verticalDistance =
+            halfBoardWithMargin /
+            Mathf.Tan(verticalFieldOfView * 0.5f);
+        float cameraDistance = Mathf.Max(
+            horizontalDistance,
+            verticalDistance
+        );
+
+        // Üst durum paneli ve alt çıkış düğmesi için tahtanın çevresinde
+        // güvenli alan bırak. Yatay Game görünümünde daha fazla pay gerekir.
+        float framingMultiplier = boardCamera.aspect > 1f
+            ? 1.38f
+            : Mathf.Lerp(1.18f, 1.28f, Mathf.InverseLerp(
+                0.75f,
+                0.45f,
+                boardCamera.aspect
+            ));
+        cameraDistance *= framingMultiplier;
+
+        // Engeller küçültüldüğü için rahat ama çok dik olmayan bir açı yeterli.
+        Vector3 viewingDirection =
+            new Vector3(0f, 1.55f, -0.62f).normalized;
+
+        boardCamera.transform.position =
+            boardCenter + viewingDirection * cameraDistance;
+        boardCamera.transform.LookAt(boardCenter);
     }
 
     private void FindCharacters()
@@ -153,6 +587,13 @@ if (uiManager == null)
 
     public void OnTileClicked(Tile clickedTile)
     {
+        if (lastTileClickFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastTileClickFrame = Time.frameCount;
+
         if (gameEnded)
         {
             return;
@@ -238,7 +679,8 @@ if (uiManager == null)
             return;
         }
 
-        PlaceObstacle(clickedTile);
+        PlaceObstacle(clickedTile, ChampionProgress.Selected);
+        DailyMissionProgress.RecordPlacedObstacle();
 
         StartEnemyTurn();
     }
@@ -249,6 +691,12 @@ if (uiManager == null)
         {
             return;
         }
+
+        roundNumber++;
+        uiManager.SetMatchInfo(
+            aiController.CurrentDifficulty,
+            roundNumber
+        );
 
         turnManager.StartHumanTurn();
         uiManager.ShowHumanMovement();
@@ -331,7 +779,10 @@ if (uiManager == null)
             return;
         }
 
-        PlaceObstacle(tile);
+        PlaceObstacle(
+            tile,
+            enemyChampion ?? ChampionCatalog.Get(ChampionId.Classic)
+        );
     }
 
     public void CompleteEnemyTurn()
@@ -351,58 +802,22 @@ if (uiManager == null)
         List<Tile> validTiles =
             new List<Tile>();
 
-        int characterX = character.CurrentX;
-        int characterZ = character.CurrentZ;
+        List<BoardPosition> validPositions =
+            BoardRules.GetValidMovementPositions(
+                boardSize,
+                new BoardPosition(
+                    character.CurrentX,
+                    character.CurrentZ
+                ),
+                IsTileBlocked,
+                IsTileOccupied
+            );
 
-        for (int xDirection = -1;
-             xDirection <= 1;
-             xDirection++)
+        foreach (BoardPosition position in validPositions)
         {
-            for (int zDirection = -1;
-                 zDirection <= 1;
-                 zDirection++)
-            {
-                if (xDirection == 0 &&
-                    zDirection == 0)
-                {
-                    continue;
-                }
-
-                int targetX =
-                    characterX + xDirection;
-
-                int targetZ =
-                    characterZ + zDirection;
-
-                if (!IsInsideBoard(
-                        targetX,
-                        targetZ))
-                {
-                    continue;
-                }
-
-                Tile targetTile =
-                    tiles[targetX, targetZ];
-
-                if (targetTile == null)
-                {
-                    continue;
-                }
-
-                if (targetTile.IsBlocked)
-                {
-                    continue;
-                }
-
-                if (IsTileOccupied(
-                        targetX,
-                        targetZ))
-                {
-                    continue;
-                }
-
-                validTiles.Add(targetTile);
-            }
+            validTiles.Add(
+                tiles[position.X, position.Z]
+            );
         }
 
         return validTiles;
@@ -413,37 +828,212 @@ if (uiManager == null)
         List<Tile> validTiles =
             new List<Tile>();
 
-        for (int x = 0; x < boardSize; x++)
+        List<BoardPosition> validPositions =
+            BoardRules.GetValidObstaclePositions(
+                boardSize,
+                IsTileBlocked,
+                IsTileOccupied
+            );
+
+        foreach (BoardPosition position in validPositions)
         {
-            for (int z = 0;
-                 z < boardSize;
-                 z++)
-            {
-                Tile tile = tiles[x, z];
-
-                if (tile == null)
-                {
-                    continue;
-                }
-
-                if (tile.IsBlocked)
-                {
-                    continue;
-                }
-
-                if (IsTileOccupied(x, z))
-                {
-                    continue;
-                }
-
-                validTiles.Add(tile);
-            }
+            validTiles.Add(
+                tiles[position.X, position.Z]
+            );
         }
 
         return validTiles;
     }
 
-    private void PlaceObstacle(Tile tile)
+    public int CountEnemyMovesAfterMovingTo(Tile targetTile)
+    {
+        if (targetTile == null)
+        {
+            return 0;
+        }
+
+        return BoardRules.GetValidMovementPositions(
+            boardSize,
+            new BoardPosition(targetTile.X, targetTile.Z),
+            IsTileBlocked,
+            (x, z) =>
+                humanPlayer != null &&
+                humanPlayer.CurrentX == x &&
+                humanPlayer.CurrentZ == z
+        ).Count;
+    }
+
+    public int CountHumanMovesAfterBlocking(Tile obstacleTile)
+    {
+        if (obstacleTile == null || humanPlayer == null)
+        {
+            return 0;
+        }
+
+        return BoardRules.GetValidMovementPositions(
+            boardSize,
+            new BoardPosition(
+                humanPlayer.CurrentX,
+                humanPlayer.CurrentZ
+            ),
+            (x, z) =>
+                IsTileBlocked(x, z) ||
+                (x == obstacleTile.X && z == obstacleTile.Z),
+            IsTileOccupied
+        ).Count;
+    }
+
+    public int CountEnemyMovesAfterBlocking(Tile obstacleTile)
+    {
+        return CountMovesAfterBlocking(enemyPlayer, obstacleTile);
+    }
+
+    public int CountEnemyReachableAreaAfterMovingTo(Tile targetTile)
+    {
+        return CountReachableAreaAfterEnemyMovesTo(targetTile, true);
+    }
+
+    public int CountHumanReachableAreaAfterEnemyMovesTo(Tile targetTile)
+    {
+        return CountReachableAreaAfterEnemyMovesTo(targetTile, false);
+    }
+
+    public int CountEnemyReachableAreaAfterBlocking(Tile obstacleTile)
+    {
+        return CountReachableAreaAfterBlocking(enemyPlayer, obstacleTile);
+    }
+
+    public int CountHumanReachableAreaAfterBlocking(Tile obstacleTile)
+    {
+        return CountReachableAreaAfterBlocking(humanPlayer, obstacleTile);
+    }
+
+    public int ScoreImpossibleEnemyMove(Tile targetTile)
+    {
+        if (targetTile == null || humanPlayer == null)
+        {
+            return int.MinValue;
+        }
+
+        return BoardStrategy.ScoreAfterBestEnemyObstacle(
+            boardSize,
+            GetBlockedSnapshot(),
+            new BoardPosition(humanPlayer.CurrentX, humanPlayer.CurrentZ),
+            new BoardPosition(targetTile.X, targetTile.Z)
+        );
+    }
+
+    public int ScoreImpossibleEnemyObstacle(Tile obstacleTile)
+    {
+        if (obstacleTile == null ||
+            humanPlayer == null ||
+            enemyPlayer == null)
+        {
+            return int.MinValue;
+        }
+
+        return BoardStrategy.ScoreEnemyObstacle(
+            boardSize,
+            GetBlockedSnapshot(),
+            new BoardPosition(humanPlayer.CurrentX, humanPlayer.CurrentZ),
+            new BoardPosition(enemyPlayer.CurrentX, enemyPlayer.CurrentZ),
+            new BoardPosition(obstacleTile.X, obstacleTile.Z)
+        );
+    }
+
+    private bool[,] GetBlockedSnapshot()
+    {
+        bool[,] blocked = new bool[boardSize, boardSize];
+
+        for (int x = 0; x < boardSize; x++)
+        {
+            for (int z = 0; z < boardSize; z++)
+            {
+                blocked[x, z] = IsTileBlocked(x, z);
+            }
+        }
+
+        return blocked;
+    }
+
+    private int CountMovesAfterBlocking(
+        GridMovement character,
+        Tile obstacleTile
+    )
+    {
+        if (character == null || obstacleTile == null)
+        {
+            return 0;
+        }
+
+        return BoardRules.GetValidMovementPositions(
+            boardSize,
+            new BoardPosition(character.CurrentX, character.CurrentZ),
+            (x, z) =>
+                IsTileBlocked(x, z) ||
+                (x == obstacleTile.X && z == obstacleTile.Z),
+            IsTileOccupied
+        ).Count;
+    }
+
+    private int CountReachableAreaAfterBlocking(
+        GridMovement character,
+        Tile obstacleTile
+    )
+    {
+        if (character == null || obstacleTile == null)
+        {
+            return 0;
+        }
+
+        return BoardRules.CountReachablePositions(
+            boardSize,
+            new BoardPosition(character.CurrentX, character.CurrentZ),
+            (x, z) =>
+                IsTileBlocked(x, z) ||
+                (x == obstacleTile.X && z == obstacleTile.Z),
+            IsTileOccupied
+        );
+    }
+
+    private int CountReachableAreaAfterEnemyMovesTo(
+        Tile targetTile,
+        bool countEnemyArea
+    )
+    {
+        if (targetTile == null ||
+            humanPlayer == null ||
+            enemyPlayer == null)
+        {
+            return 0;
+        }
+
+        BoardPosition start = countEnemyArea
+            ? new BoardPosition(targetTile.X, targetTile.Z)
+            : new BoardPosition(humanPlayer.CurrentX, humanPlayer.CurrentZ);
+
+        return BoardRules.CountReachablePositions(
+            boardSize,
+            start,
+            IsTileBlocked,
+            (x, z) => countEnemyArea
+                ? humanPlayer.CurrentX == x && humanPlayer.CurrentZ == z
+                : targetTile.X == x && targetTile.Z == z
+        );
+    }
+
+    private bool IsTileBlocked(int x, int z)
+    {
+        Tile tile = tiles[x, z];
+
+        return tile == null || tile.IsBlocked;
+    }
+
+    private void PlaceObstacle(
+        Tile tile,
+        ChampionTheme champion = null,
+        bool playSound = true
+    )
     {
         if (tile == null || tile.IsBlocked)
         {
@@ -471,13 +1061,36 @@ if (uiManager == null)
                 tile.Z * tileSpacing
             );
 
-        Instantiate(
+        GameObject obstacleObject = Instantiate(
             obstaclePrefab,
             obstaclePosition,
             Quaternion.identity
         );
 
+        float rotation = (currentTheme.Number - 1) * 11.25f;
+        obstacleObject.transform.Rotate(0f, rotation, 0f);
+        float width = 0.72f - (currentTheme.Number - 1) * 0.015f;
+        obstacleObject.transform.localScale = new Vector3(
+            width,
+            0.82f + (currentTheme.Number - 1) * 0.035f,
+            width
+        );
+        WorldThemeCatalog.ApplyToRenderers(
+            obstacleObject,
+            currentTheme.Obstacle,
+            currentTheme.Metallic,
+            currentTheme.Smoothness
+        );
+        ChampionVisualBuilder.BuildObstacle(
+            obstacleObject,
+            champion ?? ChampionCatalog.Get(ChampionId.Classic)
+        );
+
         tile.SetBlocked(true);
+        if (playSound)
+        {
+            GameAudio.PlayObstacle();
+        }
 
         Debug.Log(
             $"Engel yerleştirildi: " +
@@ -517,16 +1130,10 @@ if (uiManager == null)
         }
     }
 
-    private bool IsInsideBoard(int x, int z)
-    {
-        return x >= 0 &&
-               x < boardSize &&
-               z >= 0 &&
-               z < boardSize;
-    }
-
     public void HumanWins()
 {
+    GameProgression.CompleteCurrentLevel();
+    GameAudio.PlayWin();
     uiManager.ShowHumanWin();
 
     EndGame(
@@ -536,6 +1143,8 @@ if (uiManager == null)
 
     public void EnemyWins()
 {
+    EconomyProgress.RecordCurrentLevelDefeat();
+    GameAudio.PlayLose();
     uiManager.ShowEnemyWin();
 
     EndGame(

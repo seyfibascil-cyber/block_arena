@@ -2,7 +2,13 @@
   "name": "BlockArena.Runtime",
   "rootNamespace": "BlockArena",
   "references": [
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "Unity.ugui",
+    "Unity.Services.Core",
+    "Unity.Services.Authentication",
+    "Unity.Services.Multiplayer",
+    "Unity.Netcode.Runtime",
+    "Unity.LevelPlay"
   ],
   "autoReferenced": true
 }

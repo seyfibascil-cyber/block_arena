@@ -8,6 +8,8 @@
 /[Uu]ser[Ss]ettings/
 /[Mm]emoryCaptures/
 /[Rr]ecordings/
+/.utmp/
+/AudioPreviews/
 
 # Unity generated files
 *.pidb
@@ -37,4 +39,6 @@ Desktop.ini
 
 # Crash reports
 sysinfo.txt
-
+# Android signing keys must never be committed.
+*.keystore
+*.jks

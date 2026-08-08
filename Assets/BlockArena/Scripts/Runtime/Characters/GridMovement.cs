@@ -25,8 +25,21 @@ public class GridMovement : MonoBehaviour
         SnapToGrid();
     }
 
+    public void SetStartingPosition(int x, int z)
+    {
+        if (IsMoving)
+        {
+            return;
+        }
+
+        currentX = x;
+        currentZ = z;
+        SnapToGrid();
+    }
+
     public void MoveTo(int targetX, int targetZ)
     {
+        GameAudio.PlayMove();
         if (IsMoving)
         {
             return;

@@ -4,8 +4,35 @@ using UnityEngine;
 
 public class AIController : MonoBehaviour
 {
+    private const string DifficultyKey = "BlockArena.Difficulty";
+
+    public enum Difficulty
+    {
+        Easy,
+        Medium,
+        Hard,
+        Impossible
+    }
+
+    [SerializeField] private Difficulty difficulty = Difficulty.Medium;
     [Header("Yapay Zekâ Ayarları")]
     [SerializeField] private float thinkingDelay = 0.6f;
+
+    public Difficulty CurrentDifficulty => difficulty;
+
+    private void Awake()
+    {
+        int savedDifficulty = PlayerPrefs.GetInt(
+            DifficultyKey,
+            (int)difficulty
+        );
+
+        difficulty = (Difficulty)Mathf.Clamp(
+            savedDifficulty,
+            (int)Difficulty.Easy,
+            (int)Difficulty.Impossible
+        );
+    }
 
     public IEnumerator PlayTurn(
         BoardManager boardManager,
@@ -25,11 +52,8 @@ public class AIController : MonoBehaviour
             yield break;
         }
 
-        int randomMovementIndex =
-            Random.Range(0, validMovementTiles.Count);
-
         Tile selectedMovementTile =
-            validMovementTiles[randomMovementIndex];
+            SelectMovementTile(boardManager, validMovementTiles);
 
         enemyPlayer.MoveTo(
     selectedMovementTile.X,
@@ -50,11 +74,8 @@ while (enemyPlayer.IsMoving)
 
         if (validObstacleTiles.Count > 0)
         {
-            int randomObstacleIndex =
-                Random.Range(0, validObstacleTiles.Count);
-
             Tile selectedObstacleTile =
-                validObstacleTiles[randomObstacleIndex];
+                SelectObstacleTile(boardManager, validObstacleTiles);
 
             boardManager.PlaceEnemyObstacle(
                 selectedObstacleTile
@@ -64,5 +85,77 @@ while (enemyPlayer.IsMoving)
         yield return new WaitForSeconds(thinkingDelay);
 
         boardManager.CompleteEnemyTurn();
+    }
+
+    private Tile SelectMovementTile(
+        BoardManager boardManager,
+        List<Tile> options
+    )
+    {
+        if (difficulty == Difficulty.Easy)
+        {
+            return options[Random.Range(0, options.Count)];
+        }
+
+        if (difficulty == Difficulty.Medium)
+        {
+            return AIPlanner.SelectHighestScoring(
+                options,
+                boardManager.CountEnemyMovesAfterMovingTo
+            );
+        }
+
+        int humanWeight =
+            difficulty == Difficulty.Impossible ? 3 : 1;
+
+        if (difficulty == Difficulty.Impossible)
+        {
+            return AIPlanner.SelectHighestScoring(
+                options,
+                boardManager.ScoreImpossibleEnemyMove
+            );
+        }
+
+        return AIPlanner.SelectHighestScoring(
+            options,
+            tile =>
+                boardManager.CountEnemyReachableAreaAfterMovingTo(tile) * 2 -
+                boardManager.CountHumanReachableAreaAfterEnemyMovesTo(tile) *
+                humanWeight
+        );
+    }
+
+    private Tile SelectObstacleTile(
+        BoardManager boardManager,
+        List<Tile> options
+    )
+    {
+        if (difficulty == Difficulty.Easy)
+        {
+            return options[Random.Range(0, options.Count)];
+        }
+
+        if (difficulty == Difficulty.Medium)
+        {
+            return AIPlanner.SelectLowestScoring(
+                options,
+                boardManager.CountHumanMovesAfterBlocking
+            );
+        }
+
+        if (difficulty == Difficulty.Hard)
+        {
+            return AIPlanner.SelectHighestScoring(
+                options,
+                tile =>
+                    boardManager.CountEnemyMovesAfterBlocking(tile) * 2 -
+                    boardManager.CountHumanMovesAfterBlocking(tile) * 3
+            );
+        }
+
+        return AIPlanner.SelectHighestScoring(
+            options,
+            boardManager.ScoreImpossibleEnemyObstacle
+        );
     }
 }
